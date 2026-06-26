@@ -1,0 +1,262 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AdminRole {
+  OWNER
+  ADMIN
+}
+
+enum TemplateCategory {
+  INVOICE
+  IT_PASSWORD_RESET
+  HR_POLICY
+  DELIVERY_NOTIFICATION
+  CEO_BEC
+}
+
+enum Language {
+  SV
+  EN
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum RecipientStatus {
+  PENDING
+  SENT
+  OPENED
+  CLICKED
+  SUBMITTED
+  REPORTED
+}
+
+enum EmailEventType {
+  SENT
+  OPENED
+  CLICKED
+  SUBMITTED // boolean fact of a simulated submission only — never any credential
+  REPORTED
+}
+
+enum TrainingStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum RiskBand {
+  LOW
+  ELEVATED
+  HIGH
+  CRITICAL
+}
+
+model Organization {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+
+  // consent record (guardrail, immutable once set)
+  legalAuthorityConfirmed Boolean   @default(false)
+  consentAt               DateTime?
+  consentByAdminUserId    String?
+  consentIpHash           String?
+
+  // sending safety (guardrail)
+  sendingDomain     String?
+  domainVerified    Boolean @default(false)
+  domainVerifyToken String?
+
+  // branding (Phase 5)
+  logoUrl      String?
+  primaryColor String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  adminUsers AdminUser[]
+  employees  Employee[]
+  campaigns  Campaign[]
+  templates  PhishingTemplate[]
+  trainings  TrainingModule[]
+  riskScores RiskScore[]
+  smtpConfig SmtpConfig?
+}
+
+model AdminUser {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String       @unique
+  passwordHash   String
+  name           String
+  role           AdminRole    @default(OWNER)
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+}
+
+model Employee {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  email          String
+  department     String?
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  recipients CampaignRecipient[]
+  trainings  TrainingCompletion[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+}
+
+model PhishingTemplate {
+  id             String           @id @default(cuid())
+  organizationId String? // null = system/global template
+  organization   Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  category       TemplateCategory
+  language       Language
+  subject        String
+  senderName     String // fictional only (e.g. "Acme IT Portal")
+  senderEmail    String
+  bodyHtml       String
+  landingConfig  Json? // fake form layout descriptor (never stores inputs)
+  redFlags       Json // [{type, explanation}] feeds training
+  isSystem       Boolean          @default(false)
+  createdAt      DateTime         @default(now())
+
+  recipients CampaignRecipient[]
+
+  @@index([organizationId])
+}
+
+model Campaign {
+  id                   String         @id @default(cuid())
+  organizationId       String
+  organization         Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name                 String
+  status               CampaignStatus @default(DRAFT)
+  scheduledAt          DateTime?
+  sentAt               DateTime?
+  createdByAdminUserId String?
+  createdAt            DateTime       @default(now())
+
+  recipients CampaignRecipient[]
+  riskScores RiskScore[]
+
+  @@index([organizationId])
+}
+
+model CampaignRecipient {
+  id             String           @id @default(cuid())
+  organizationId String // denormalized for scoping
+  campaignId     String
+  campaign       Campaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  templateId     String
+  template       PhishingTemplate @relation(fields: [templateId], references: [id])
+  trackingToken  String           @unique // unique per recipient (Phase 2)
+  status         RecipientStatus  @default(PENDING)
+  sentAt         DateTime?
+
+  events    EmailEvent[]
+  trainings TrainingCompletion[]
+
+  @@index([organizationId])
+  @@index([campaignId])
+}
+
+model EmailEvent {
+  id                  String            @id @default(cuid())
+  organizationId      String
+  campaignRecipientId String
+  recipient           CampaignRecipient @relation(fields: [campaignRecipientId], references: [id], onDelete: Cascade)
+  type                EmailEventType // SUBMITTED carries NO credential data
+  occurredAt          DateTime          @default(now())
+  ipHash              String?
+  userAgent           String?
+
+  @@index([organizationId])
+  @@index([campaignRecipientId])
+}
+
+model TrainingModule {
+  id             String           @id @default(cuid())
+  organizationId String? // null = system module
+  organization   Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category       TemplateCategory
+  language       Language
+  title          String
+  contentJson    Json
+  quizJson       Json
+  isSystem       Boolean          @default(false)
+
+  completions TrainingCompletion[]
+
+  @@index([organizationId])
+}
+
+model TrainingCompletion {
+  id                  String             @id @default(cuid())
+  organizationId      String
+  employeeId          String
+  employee            Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  trainingModuleId    String
+  trainingModule      TrainingModule     @relation(fields: [trainingModuleId], references: [id])
+  campaignRecipientId String?
+  recipient           CampaignRecipient? @relation(fields: [campaignRecipientId], references: [id])
+  status              TrainingStatus     @default(ASSIGNED)
+  quizScore           Int?
+  startedAt           DateTime?
+  completedAt         DateTime?
+
+  @@index([organizationId])
+  @@index([employeeId])
+}
+
+model RiskScore {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId     String? // null = org-level aggregate snapshot
+  campaignId     String?
+  campaign       Campaign?    @relation(fields: [campaignId], references: [id])
+  score          Int
+  band           RiskBand
+  computedAt     DateTime     @default(now())
+
+  @@index([organizationId])
+  @@index([employeeId])
+}
+
+model SmtpConfig {
+  id             String       @id @default(cuid())
+  organizationId String       @unique
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  host           String
+  port           Int
+  secure         Boolean      @default(true)
+  username       String
+  passwordEnc    String // encrypted at rest, not plaintext
+  fromName       String
+  fromEmail      String
+  verified       Boolean      @default(false)
+}
