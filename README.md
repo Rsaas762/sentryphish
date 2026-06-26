@@ -74,9 +74,11 @@ railway.json        Railway deploy config (API service)
 
 ## Deployment
 
-Deploys as a **single Vercel project** — the Vite client served statically and the Express API
-as a serverless function at `/api/*` on the same domain, backed by a serverless Postgres (Neon).
-Step-by-step instructions (Neon setup, env vars, one-click import) are in **[DEPLOY.md](DEPLOY.md)**.
+Deploys as a **single service** — the Express server serves the built React client *and* the API
+on one domain (same-origin cookies, one URL), backed by PostgreSQL. **Railway** is the recommended
+host (long-lived server + managed Postgres). Step-by-step instructions (Postgres plugin, env vars,
+GitHub deploy) are in **[DEPLOY.md](DEPLOY.md)**; `railway.json` defines the build, start, and
+healthcheck.
 
-A split alternative (frontend on Vercel, backend + Postgres on Railway via `railway.json`) is also
-documented at the bottom of DEPLOY.md.
+An all-on-Vercel serverless alternative (Express under `/api` + Neon Postgres) is also configured
+and documented at the bottom of DEPLOY.md.

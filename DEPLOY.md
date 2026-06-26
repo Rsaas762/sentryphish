@@ -1,79 +1,75 @@
-# Deploying SentryPhish to Vercel (single project)
+# Deploying SentryPhish
 
-SentryPhish deploys as **one Vercel project**: the Vite client is served as static files, and
-the Express API runs as a serverless function at `/api/*` on the same domain (so cookies stay
-same-origin). PostgreSQL is provided by a serverless Postgres — **Neon** (also what "Vercel
-Postgres" uses under the hood).
+SentryPhish runs as a **single service**: the Express server serves the built React client
+*and* the API on one domain, backed by PostgreSQL. The recommended host is **Railway** (a
+long-lived server + managed Postgres — the architecture this app was designed for). A Vercel
+serverless alternative is documented at the end.
 
-You'll do this from the Vercel dashboard — no CLI needed. ~5 minutes.
+---
 
-## How the pieces map
+## Railway (recommended)
 
-| Piece | Where | Notes |
-|-------|-------|-------|
-| Client (Vite SPA) | Vercel static (`client/dist`) | built by `vercel-build` |
-| Express API | Vercel serverless function | `api/[...path].ts` re-exports `createApp()` |
-| Postgres | Neon | pooled URL for the app, direct URL for migrations |
-| Routing | `vercel.json` | `/api/*` → function; everything else → `index.html` |
+One service from this repo + a Postgres plugin. ~5 minutes, no CLI required.
 
-## Steps
+### How the pieces map
 
-### 1. Create the database (Neon)
-1. Go to <https://neon.tech> → create a project (any region near your users).
-2. Copy **two** connection strings from the Neon dashboard:
-   - **Pooled** connection (host contains `-pooler`) → this is `DATABASE_URL`.
-   - **Direct** connection (no `-pooler`) → this is `DIRECT_URL`.
-   Both should end with `?sslmode=require`.
+| Piece | Where |
+|-------|-------|
+| Client (Vite SPA) | Built to `client/dist`, served by Express as static + SPA fallback |
+| API (Express) | Same service, routes under `/api/*` |
+| Postgres | Railway Postgres plugin |
+| Build / start / healthcheck | `railway.json` |
 
-> "Vercel Postgres" works too (Storage tab → Postgres). It exposes the same pooled/direct URLs.
+### Steps
 
-### 2. Import the repo into Vercel
-1. <https://vercel.com/new> → **Import Git Repository** → pick `Rsaas762/sentryphish`.
-2. Framework preset: **Other** (the included `vercel.json` already defines the build).
-3. Leave Root Directory as the repo root.
+1. **Create the project** — <https://railway.app> → *New Project* → *Deploy from GitHub repo* →
+   pick `Rsaas762/sentryphish`. Railway reads `railway.json` for build/start/healthcheck.
+2. **Add Postgres** — in the project, *New* → *Database* → *Add PostgreSQL*.
+3. **Set the app service's variables** (Variables tab):
 
-### 3. Set environment variables (Vercel → Project → Settings → Environment Variables)
-| Name | Value |
-|------|-------|
-| `DATABASE_URL` | Neon **pooled** connection string |
-| `DIRECT_URL` | Neon **direct** connection string |
-| `JWT_SECRET` | a long random string (e.g. `openssl rand -hex 32`) |
-| `NODE_ENV` | `production` |
-| `COOKIE_SECURE` | `true` |
-| `CLIENT_ORIGIN` | your Vercel URL, e.g. `https://sentryphish.vercel.app` |
+   | Name | Value |
+   |------|-------|
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (reference the Postgres service) |
+   | `DIRECT_URL` | `${{Postgres.DATABASE_URL}}` (same — Railway Postgres isn't pooled) |
+   | `JWT_SECRET` | a long random string — `openssl rand -hex 32` |
+   | `NODE_ENV` | `production` |
+   | `COOKIE_SECURE` | `true` |
+   | `CLIENT_ORIGIN` | your Railway URL once generated, e.g. `https://sentryphish.up.railway.app` |
 
-Add them to **Production** (and Preview if you want preview deploys to work).
+   > `PORT` is injected by Railway automatically — don't set it. The server reads it.
+4. **Generate a domain** — Settings → Networking → *Generate Domain*. Put that URL in
+   `CLIENT_ORIGIN` (step 3) and redeploy.
+5. **Deploy.** Railway runs:
+   - **build:** `npm run build` (Prisma client via `postinstall`, then server `tsc` + client `vite build`)
+   - **start:** `npm run db:migrate:deploy -w server` (applies migrations) then `npm run start -w server` (`node dist/index.js`)
+   - **healthcheck:** `GET /health`
 
-### 4. Deploy
-Click **Deploy**. The build runs `vercel-build`, which:
-1. applies Prisma migrations to Neon (`prisma migrate deploy`, via `DIRECT_URL`), then
-2. builds the client to `client/dist`.
+   Every push to `master` redeploys automatically.
 
-On every `git push` to `master`, Vercel redeploys automatically.
+### Smoke-test the live URL
+1. Open the Railway URL → the landing page loads.
+2. **Provision your organization** (tick consent) → you land on the dashboard.
+3. **Employees** → upload a CSV (`name,email,department`) → rows appear.
 
-### 5. Smoke-test the live URL
-1. Open `https://<your-app>.vercel.app` → the landing page loads.
-2. **Provision your organization** (tick consent) → you should land on the dashboard.
-3. Go to **Employees** → upload a CSV (`name,email,department`) → rows appear.
+### Notes
+- **Single origin** ⇒ `sameSite=lax` cookies + `COOKIE_SECURE=true` over Railway's HTTPS; no CORS needed.
+- **Migrations** run on every deploy via `prisma migrate deploy` (idempotent — only applies pending).
+- The Prisma schema includes Linux `binaryTargets`, so the query engine ships correctly on Railway.
 
-## Notes & troubleshooting
+---
 
-- **Prisma engine on Vercel:** the schema sets
-  `binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]` so the Linux query
-  engine ships with the function. `prisma generate` runs automatically via the server's
-  `postinstall`. If a deploy logs *"Query engine library for current platform … could not be
-  found"*, confirm those `binaryTargets` are present and redeploy (clear build cache).
-- **Cookies:** same-origin (`sameSite=lax`) + `COOKIE_SECURE=true` over Vercel's HTTPS. No CORS
-  config is needed because the client and API share a domain.
-- **Migrations** use `DIRECT_URL` (unpooled) to avoid pooler/advisory-lock issues; the running
-  app uses the pooled `DATABASE_URL`.
-- **Cold starts:** Neon may auto-suspend on the free tier; the first request after idle takes a
-  second or two to wake the database. Fine for a demo/portfolio.
+## Alternative: Vercel (serverless)
 
-## Alternative: split deployment (frontend Vercel + backend Railway)
+The repo is also configured to deploy all-on-Vercel (static client + Express as a serverless
+function under `/api`) with a **Neon** Postgres. This works but has the usual serverless/Prisma
+caveats (cold starts, occasional engine-tracing cache-clear). Use it only if you specifically
+want Vercel.
 
-If you'd rather run the backend as a normal long-lived server, deploy `server` to Railway
-(see `railway.json`) and only the client to Vercel. You'd then set `VITE_API_URL` to the Railway
-API URL at build time, switch the cookie to `sameSite=None; Secure` (cross-domain), and set
-`CLIENT_ORIGIN` on the API to the Vercel URL. The single-project setup above is simpler and is
-the recommended path.
+1. **Neon** (<https://neon.tech>) → new project → copy the **pooled** string (`DATABASE_URL`)
+   and the **direct** string (`DIRECT_URL`).
+2. **vercel.com/new** → import `Rsaas762/sentryphish` (preset: *Other*; `vercel.json` defines the build).
+3. Env vars: `DATABASE_URL` (pooled), `DIRECT_URL` (direct), `JWT_SECRET`, `NODE_ENV=production`,
+   `COOKIE_SECURE=true`, `CLIENT_ORIGIN=https://<app>.vercel.app`.
+4. Deploy. If a build logs *"Query engine … could not be found"*, clear the build cache and redeploy.
+
+The relevant files: `vercel.json` (routing) and `api/[...path].ts` (re-exports the Express app).
