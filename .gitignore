@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+.pnp.*
+
+# build output
+dist/
+build/
+.vite/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# prisma
+server/prisma/*.db
+
+# logs
+*.log
+npm-debug.log*
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
+
+# test / coverage
+coverage/
