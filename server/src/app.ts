@@ -3,6 +3,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import { env } from "./env";
 import { errorHandler } from "./middleware/errorHandler";
+import { authRouter } from "./modules/auth/auth.routes";
 
 export function createApp() {
   const app = express();
@@ -15,8 +16,7 @@ export function createApp() {
     res.json({ status: "ok" });
   });
 
-  // Routers are mounted here in later tasks:
-  // app.use("/api/auth", authRouter);     // Task 4
+  app.use("/api/auth", authRouter);
   // app.use("/api/employees", employeesRouter);  // Task 5
 
   app.use(errorHandler);
