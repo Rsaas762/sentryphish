@@ -1,4 +1,7 @@
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
+// Default to same-origin relative requests ("/api/..."). In dev, Vite proxies /api to
+// the Express server (see vite.config.ts); in production on Vercel, /api is the serverless
+// function on the same domain. Override with VITE_API_URL only for a split deployment.
+const BASE = import.meta.env.VITE_API_URL ?? "";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

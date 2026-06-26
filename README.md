@@ -72,14 +72,11 @@ docker-compose.yml  local Postgres (+ test DB)
 railway.json        Railway deploy config (API service)
 ```
 
-## Deployment (Railway)
+## Deployment
 
-Two services from this one repo:
+Deploys as a **single Vercel project** — the Vite client served statically and the Express API
+as a serverless function at `/api/*` on the same domain, backed by a serverless Postgres (Neon).
+Step-by-step instructions (Neon setup, env vars, one-click import) are in **[DEPLOY.md](DEPLOY.md)**.
 
-- **API** (`server`): start command runs `prisma migrate deploy` then `node dist/index.js`.
-  Set `DATABASE_URL` (managed Railway Postgres), `JWT_SECRET`, `CLIENT_ORIGIN` (the client URL),
-  and `COOKIE_SECURE=true`.
-- **Client** (`client`): static build via `npm run build -w client`, serving `client/dist`. Set
-  `VITE_API_URL` to the API service URL.
-
-See `railway.json` for the API service configuration.
+A split alternative (frontend on Vercel, backend + Postgres on Railway via `railway.json`) is also
+documented at the bottom of DEPLOY.md.
