@@ -6,10 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // App/runtime uses the pooled connection; migrations use the direct (unpooled) one.
-  // Locally both point at the same Docker Postgres.
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  url      = env("DATABASE_URL")
 }
 
 enum AdminRole {

@@ -30,7 +30,6 @@ One service from this repo + a Postgres plugin. ~5 minutes, no CLI required.
    | Name | Value |
    |------|-------|
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (reference the Postgres service) |
-   | `DIRECT_URL` | `${{Postgres.DATABASE_URL}}` (same — Railway Postgres isn't pooled) |
    | `JWT_SECRET` | a long random string — `openssl rand -hex 32` |
    | `NODE_ENV` | `production` |
    | `COOKIE_SECURE` | `true` |
@@ -65,11 +64,12 @@ function under `/api`) with a **Neon** Postgres. This works but has the usual se
 caveats (cold starts, occasional engine-tracing cache-clear). Use it only if you specifically
 want Vercel.
 
-1. **Neon** (<https://neon.tech>) → new project → copy the **pooled** string (`DATABASE_URL`)
-   and the **direct** string (`DIRECT_URL`).
+1. **Neon** (<https://neon.tech>) → new project → copy a connection string. Use the **pooled**
+   string (host contains `-pooler`) as `DATABASE_URL`. If migrations fail over the pooler, use
+   the **direct** (unpooled) string instead — it works for both runtime and migrations.
 2. **vercel.com/new** → import `Rsaas762/sentryphish` (preset: *Other*; `vercel.json` defines the build).
-3. Env vars: `DATABASE_URL` (pooled), `DIRECT_URL` (direct), `JWT_SECRET`, `NODE_ENV=production`,
-   `COOKIE_SECURE=true`, `CLIENT_ORIGIN=https://<app>.vercel.app`.
+3. Env vars: `DATABASE_URL`, `JWT_SECRET`, `NODE_ENV=production`, `COOKIE_SECURE=true`,
+   `CLIENT_ORIGIN=https://<app>.vercel.app`.
 4. Deploy. If a build logs *"Query engine … could not be found"*, clear the build cache and redeploy.
 
 The relevant files: `vercel.json` (routing) and `api/[...path].ts` (re-exports the Express app).
